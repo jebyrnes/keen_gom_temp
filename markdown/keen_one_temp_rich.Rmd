@@ -1,0 +1,367 @@
+---
+title: "Novel Relationships Between Temperature, Kelp Abundance, and Species Richness in New England Kelp Forests"
+author: "Jarrett E. K. Byrnes, Alison Haupt, Jennifer A. Dijkstra, Jonathan Grabowski, Marissa McMahan, Douglas Rasher, Austin T. Humphries"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+#the basics
+library(tidyverse)
+library(readr)
+library(modelr)
+
+#mixed models and analysis
+library(lme4)
+#library(lmerTest)
+library(merTools)
+library(car)
+library(nlme)
+
+#tables and layout
+#devtools::install_github("bbolker/broom.mixed")
+library(broom)
+library(broom.mixed)
+library(knitr)
+library(kableExtra)
+
+#graphics
+#devtools::install_github("thomasp85/patchwork")
+library(ggplot2)
+library(ggmap)
+library(patchwork)
+library(wesanderson)
+
+#data
+keen_one <- read_csv("../derived_data/keen_temp_community_merged.csv") %>%
+  filter(SITE != "SW Appledore")
+
+#some options
+knitr::opts_chunk$set(echo = FALSE, warning = FALSE, 
+                      message = FALSE, knitr.kable.NA = '')
+theme_set(theme_bw(base_size=17))
+
+#need a better palette
+#Zissou1 didn't have enough differentiation
+#pal <- wes_palette("Zissou1", length(unique(keen_one$SITE)), type = "continuous")
+#scale_colour_discrete <- function(...)
+#  scale_colour_manual(values=RColorBrewer::brewer.pal(11,"Set3"))
+
+```
+
+#### Abstract
+
+
+#### Introduction
+
+I. Key to understand direct and indirect effects of climate change  
+&nbsp; &nbsp; A. Particularly important wrt foundation species  
+II. Kelp forest paradigm is envt -> kelp -> community  
+ &nbsp; &nbsp;    A. Some direct envt effect, but variable  
+III. New England kelp morphology very different, different ecology  
+&nbsp; &nbsp;     A. Levin et al indications that kelp is not only foundation species here  
+&nbsp; &nbsp;     B. Look at Ecklonia systems
+&nbsp; &nbsp;     C. Look, we're New England. Whatever, California.  
+&nbsp; &nbsp;     D. Transition with talking about sugar kelp as dominant  
+IV. Sugar kelp is sensitive to temperature via multiple mechanisms  
+ &nbsp; &nbsp;    A. Temp up, kelp should go down from expts  
+ &nbsp; &nbsp;    B. Review everything from Gerard to killer Nova Scotia work  
+V. But does it blend in the field?  
+&nbsp; &nbsp;     A. To answer if temp drives kelp and community, we put together large-scale survey  
+&nbsp; &nbsp;     B. KEEN intro, and how it will answer questions.  
+ &nbsp; &nbsp;    C. Leave the reader wanting more by saying we show that our system is totes different   
+    
+#### Methods
+
+##### Temperature
+We collected temperature from the nearest offshore buoy to each site. While these temperatures were likely not the conditions experienced precisely at the site, they should at least correlate to both regional and temporal trends experienced by kelps. As kelp reproduction and initial growth occurs in the winter and early spring, we chose to examine minimum winter temperature as a reflection of conditions that could influence both kelp abundance as well as influence the community as a whole. **note to self - this justification either needs beefing up, referencing - ha, or I need to systematically test a few other summarizations of temperature. They're all pretty correlated anyway** --**Note to co-authors, I also attempted this briefly with nearest NOAA monitoring station, as this pulled stations within the Narraganset and Boston Harbor, but those stations differed by upwards of 8C on minima from others, and not in directions you would suspect, leading me to think that offshore is the more appropriate way to go** 
+
+```{r sites}
+sites_summary <- keen_one %>%
+  group_by(SITE) %>%
+  summarize(LONG = mean(LONG, na.rm=T),
+            LAT = mean(LAT, na.rm=T),
+            STATION_LONG = mean(STATION_LONG, na.rm=T),
+            STATION_LAT = mean(STATION_LAT, na.rm=T),
+            ) %>%
+  gather(MEASUREMENT, VALUE, -SITE) %>%
+  mutate(TYPE = ifelse(str_detect(MEASUREMENT, "STATION"), "Buoy", "KEEN Site")) %>%
+  mutate(MEASUREMENT = str_replace(MEASUREMENT, "STATION_", "")) %>%
+  spread(MEASUREMENT, VALUE)
+
+#visualize to check
+keen_map <- get_map(c(min(sites_summary$LONG), 
+                      min(sites_summary$LAT)),
+                    zoom=6)
+
+ggmap(keen_map) +
+  geom_point(data = sites_summary, 
+             mapping = aes(x=LONG, y = LAT, color=TYPE,
+                           shape = TYPE), size=3) +
+  xlim(c(-72, -69)) + ylim(c(40.7,43.9)) +
+  xlab("") + ylab("") +
+  scale_colour_manual(values=c("red", "black")) +
+  scale_shape_manual(values=c(17,19))
+```
+
+While some sites had benthic loggers deployed during the period of observation, buoy data enabled a more comprehensive analysis for two reasons. First, this meant that the first year sampled had to be thrown out due to no preceeding winter temperatures recorded. This filtering was particularly problematic as a few sites only have one year of data at present. Second, For analyses to determine a proper causal linkage (see data analysis below), we required temperature data during the duration of sampling for the entire data set - e.g., even for a site sampled in 2016, our models required data from 2013-2017. 
+
+##### Statistical analysis (currently interdigitated with results for the whole data set)
+To examine the relationship between temperature and *Saccharina latissima* abundance, we first took a naive look at the relationship between winter minimum temperature at kelp abundance by fitting a generalized linear mixed model with a lognormal error and log link. Percent rocky substrate was included as a covariate, and we included a random effect of site. To evaluate the model, we include a chi square log ratio test of the model as well as tests of the coefficients.
+
+```{r}
+
+qplot(WINTER_MIN_SEA_SURFACE_TEMPERATURE, S_LATISSIMA_SQ_M + 1e-5, data = keen_one, color=SITE) +
+  stat_smooth(method="glm",  mapping = aes(group=1),
+              method.args = list(family=gaussian(link="log")),
+              color="black") +
+  xlab("Winter Minimum Sea\nSurface Temperature (C)") +
+  ylab(expression(paste(italic("Saccharina latissima"), " per sq. m")))
+
+keen_sl_naive <-  glmer(S_LATISSIMA_SQ_M + 1e-5 ~ WINTER_MIN_SEA_SURFACE_TEMPERATURE + 
+                       PERCENT_ROCK + (1|SITE),
+                     data = keen_one,
+                     family=gaussian(link="log"),
+                     nAGQ=0)
+
+kable(Anova(keen_sl_naive), digits=3, format="html") %>%
+  kable_styling()
+
+kable(tidy(keen_sl_naive), "html", digits=3) %>%
+  kable_styling()
+```      
+
+While this model seems to demonstrate a negative relationship between temperature and sugar kelp abundance, given spatial gradients of temperature that correlate with a wide variety of other drivers, it's difficult to say whether this represents a true relationship. To assess the importance of temperature with greater confidence, we used a hierarchical model with group mean centering [@REF TBA]. By calculating a centered mean temperature from 2014-2016, an annual deviation from site-level mean, and including both in the model along with a random effect of site, we're able to 1) derive a relationship driven by between-year variation in temperature without the confusion of spatial correlates and 2) evaluate the relationship due to spatial differences in thermal regime via use of a hierarchical predictor alongside a site-level random effect. In essence, we partition the spatial and temporal component of temperature's effects, and the deviation from site average coefficient addresses the impact of temporal change in temperature at a site.
+
+```{r}
+keen_sl_mod <-  glmer(S_LATISSIMA_SQ_M +1e-5~ group_temp + temp_group_cent + 
+                       PERCENT_ROCK + (1|SITE),
+                     data = keen_one,
+                     family=gaussian(link="log"),
+                     nAGQ=0)
+
+kable(Anova(keen_sl_mod), digits=3, format="html") %>%
+  kable_styling()
+
+kable(tidy(keen_sl_mod), "html", digits=3) %>%
+  kable_styling()
+```
+
+```{r, fig.width=9, fig.height=6}
+predict_data_group <- modelr::data_grid(keen_one,
+                                  group_temp = round(seq_range(group_temp, 4),2),
+                                  temp_group_cent = seq_range(temp_group_cent, 100),
+                                  PERCENT_ROCK = mean(PERCENT_ROCK),
+                                  SITE = "NE Appledore") #site doesn't matter
+
+keen_sl_predict <- predict(keen_sl_mod, predict_data_group,
+                                   type="response") %>% 
+  cbind(predict_data_group) %>%
+  mutate(WINTER_MIN_SEA_SURFACE_TEMPERATURE = group_temp + temp_group_cent) 
+
+names(keen_sl_predict)[1] <- "fit"
+
+
+ggplot(keen_one, 
+       aes(x = temp_group_cent, y=S_LATISSIMA_SQ_M)) +
+  geom_jitter(mapping = aes(color = SITE)) +
+  geom_line(data = keen_sl_predict,
+            mapping = aes(y = fit, lty = factor(group_temp)), lwd=1) +
+  geom_text(data = keen_sl_predict %>% 
+              group_by(group_temp) %>% 
+              slice(1L) %>% mutate(fit = fit,
+                                   temp_group_cent = -1.35),
+            aes(y=fit, label=group_temp)) +
+  ylab(expression(paste(italic("Saccharina latissima"), " per sq. m"))) +
+  xlab("Deviation from Site Average (C)") +
+  scale_linetype(guide = guide_legend("Site Average\nWinter Minimum\nTemperature (C)"))+
+  scale_color_discrete(guide = guide_legend("Site"))
+
+```
+
+This model shows a roughly `r round(1-exp(fixef(keen_sl_mod)[3]),3)*100`% decrease in kelp per degree increase in temperature at a site.
+
+To further support the conclusion that temperature drives these kelp forests, we conducted a differencing analysis of those sites sampled throughout the entire duration of the study. For each year sampled at these sites, we calculated the change in *S. latissima* and compared it to the change in temperature using a linear mixed model with site as a random intercept and percent rocky cover as a covariate. To make our results comparable to previous analysis, rather than looking at difference in abundance *per se*, we looked at percent change, i.e. (kelp<sub>t</sub> - kelp<sub>t-1</sub>)/kelp<sub>t-1</sub>. This method has the advantage of removing any signal of spatial differences - be they from a gradient or just site to site variability - and focuses instead on the dynamics of temporal change. This does restrict our sample size somewhat (n=18) relative to previous analyses, but we have fewer parameters to estimate.
+
+```{r}
+whole_study <- keen_one %>%
+  group_by(SITE) %>%
+  mutate(total_years = sum(unique(YEAR) %in% 2014:2016)) %>%
+  ungroup() %>%
+  filter(total_years==max(total_years))
+
+
+## Differencing model with whole study data only
+difference_data <- whole_study %>%
+  #first, summarize by site*year, as transects are not permanent
+  #so we lose individual level variation
+  group_by(SITE, YEAR) %>%
+  summarize(SITE_S_LATISSIMA_SQ_M = mean(S_LATISSIMA_SQ_M, na.rm=T),
+            SITE_PERCENT_S_LATISSIMA = mean(PERCENT_S_LATISSIMA, na.rm=T),
+            WINTER_MIN_SEA_SURFACE_TEMPERATURE = mean(WINTER_MIN_SEA_SURFACE_TEMPERATURE, na.rm=T),
+            SITE_PERCENT_ROCK = mean(PERCENT_ROCK, na.rm=T),
+            SITE_RICHNESS = mean(TOTAL_RICHNESS, na.rm=T)
+  ) %>% 
+  arrange(SITE, YEAR) %>%
+  #then, difference by year
+  group_by(SITE) %>%
+  mutate(SL_DIFF = SITE_S_LATISSIMA_SQ_M - lag(SITE_S_LATISSIMA_SQ_M),
+         SL_PERC_DIFF = 100*SL_DIFF/lag(SITE_S_LATISSIMA_SQ_M),
+         SL_COVER_DIFF = SITE_PERCENT_S_LATISSIMA - lag(SITE_PERCENT_S_LATISSIMA),
+         TEMP_DIFF = WINTER_MIN_SEA_SURFACE_TEMPERATURE - lag(WINTER_MIN_SEA_SURFACE_TEMPERATURE),
+         RICH_DIFF = SITE_RICHNESS - lag(SITE_RICHNESS),
+         RICH_PERC_DIFF = RICH_DIFF/lag(SITE_RICHNESS)) %>%
+  ungroup()
+
+
+diff_mod <- lme(SL_PERC_DIFF ~ TEMP_DIFF + SITE_PERCENT_ROCK, 
+                random = (~1|SITE), 
+                 data = difference_data,
+                na.action = na.omit)
+
+kable(Anova(diff_mod), digits=3, format="html") %>%
+  kable_styling()
+
+kable(tidy(diff_mod), "html", digits=3) %>%
+  kable_styling()
+
+```
+
+Here again we see that for one degree change we have a `r round(fixef(diff_mod), 3)`% change in kelp.
+
+```{r}
+
+qplot(TEMP_DIFF, SL_PERC_DIFF, color=SITE, data = difference_data) +
+  stat_smooth(method = "lm", mapping=aes(group = 1), color="black") +
+  xlab("Change in winter minimum temperature (C)") + 
+  ylab("Percent Change in kelp") +
+  scale_y_continuous(label = function(x) paste0(x, "%"))
+```
+
+#### Connecting Change in Kelp to Species Richness
+
+Looking at naive simple relationships, while there is a negative correlation between winter minimum sea surface temperature, there does not appear to be a relationship between kelp and total species richness, as is found in other kelp systems.
+
+```{r, fig.width=9, fig.height=5}
+
+rich_temp_plot <- qplot(WINTER_MIN_SEA_SURFACE_TEMPERATURE, TOTAL_RICHNESS, data = keen_one, color=SITE) +
+  stat_smooth(method="glm",  mapping = aes(group=1),
+              method.args = list(family=poisson(link="log")),
+              color = "black")+
+  xlab("Winter Minimum Sea\nSurface Temperature (C)") +
+  ylab("Total Species Richness")
+
+rich_kelp_plot <- qplot(S_LATISSIMA_SQ_M, TOTAL_RICHNESS, data = keen_one, color=SITE) +
+  stat_smooth(method="lm", mapping=aes(group=1), color = "black")+
+  ylab("Total Species Richness") +
+  xlab(expression(paste(italic("Saccharina latissima"), " per sq. m")))
+
+
+rich_temp_plot + guides(color=FALSE) + labs(tag = "A") + 
+  rich_kelp_plot + labs(tag="B")
+```
+
+This lack of a kelp-richness relationship could be real, or it could be that it is obscured by effects of temperature on species richness - either due to spatial or temporal variation. In other kelp systems, environmental drivers often have direct effects on bioloical communities as well as indirect effects by altering kelp abundances which then affect community structure. To tease apart the effects of temperature versus kelp on species richness, we fit a Structural Equation Model to the data using piecewise approaches with piecewiseSEM 2.0 (Lefcheck, Byrnes, and Grace 2018). In the first model, we used the same group mean centered approach for both richness and kelp abundance as above. The model was saturated, so we could not estimate fit, but, could look at 
+
+```{r}
+library(piecewiseSEM)
+keen_rich_mod <-  glmer(TOTAL_RICHNESS ~ group_temp + 
+                         temp_group_cent + S_LATISSIMA_SQ_M +
+                         PERCENT_ROCK + (1|SITE),
+                       data = keen_one,
+                       family=poisson(link="log"),
+                     nAGQ=0)
+
+keen_sem <- psem(keen_sl_mod, 
+                 keen_rich_mod,
+                data =  keen_one_glm)
+
+#difference data
+coefs(keen_sem)[,-8] %>% kable("html", 3) %>%
+  kable_styling()
+```
+
+
+```{r, fig.cap="<b>NOTE: I'm futzing with igraph to see if I can automate this</b>",
+fig.width=6, fig.height=7}
+library(igraph)
+sem_vars <- data.frame(nodes = c("Mean Winter Minimum Temperature", 
+                              "Deviation from Mean Temperature",
+                              "Sugar kelp abundance",
+                              "Total Species Richness"
+                              )) %>% mutate(label = nodes)
+
+paths <- data.frame(source = c("Mean Winter Minimum Temperature",
+                                  "Mean Winter Minimum Temperature",
+                              "Deviation from Mean Temperature",
+                              "Deviation from Mean Temperature",
+                              "Sugar kelp abundance"),
+                target = c("Sugar kelp abundance",
+                           "Total Species Richness",
+                           "Sugar kelp abundance",
+                           "Total Species Richness",
+                           "Total Species Richness"))
+
+path_layout <- matrix(c(1,1,
+                          10,1,
+                          5,5,
+                          5,10), byrow=TRUE, ncol=2)
+
+sem_paths <- graph_from_data_frame(d=paths, vertices=sem_vars, directed=T) 
+
+
+#plot
+## Function to wrap long strings
+# Source: http://stackoverflow.com/a/7367534/496488
+wrap_strings <- function(vector_of_strings,width){
+  as.character(sapply(vector_of_strings, FUN=function(x){
+                        paste(strwrap(x, width=width), collapse="\n")
+                        }))
+  }
+
+# Apply the function to wrap the node labels
+V(sem_paths)$label = wrap_strings(V(sem_paths)$label, 12)
+
+
+plot(sem_paths, vertex.size=350, vertex.size2	=200,
+     vertex.shape = c("rectangle", "rectangle", "rectangle", "rectangle"),
+     layout = path_layout,
+     vertex.frame.color	= "black",
+     vertex.color	 = "white",
+     vertex.label.color = "black",
+     vertex.label.family = "Arial",
+     vertex.label.cex = 0.8,
+     edge.lty = c(1, 2, 1, 1, 2, 2),
+     edge.color = "black",
+     rescale=FALSE,
+     xlim=c(0,5),
+     ylim=c(0,10),
+     margin = c(0,0,0,0))
+
+```
+The relationship between temperature and richness is direct. There is no apparent mediation by sugar kelp.
+
+Further, if we repeate the differencing analysis, but this time as an SEM with richness, we see again that temperature change, not kelp change, drives total species richness.
+
+```{r}
+
+rich_diff_mod <- lme(RICH_PERC_DIFF ~ TEMP_DIFF+SL_DIFF,
+                        random = (~1|SITE), 
+                      data = difference_data,
+                      na.action = na.omit)
+
+
+
+diff_sem <- psem(diff_mod,
+                 rich_diff_mod,
+                 data = difference_data)
+
+#difference data
+data = difference_data
+coefs(diff_sem)[,-8] %>% kable("html", 3) %>%
+  kable_styling()
+```
+
+
+#### Discussion
+
+I. Whoah, New England is different.
