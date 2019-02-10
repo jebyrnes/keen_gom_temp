@@ -1,7 +1,9 @@
 ---
 title: "Novel Relationships Between Temperature, Kelp Abundance, and Species Richness in New England Kelp Forests"
 author: "Jarrett E. K. Byrnes, Alison Haupt, Jennifer A. Dijkstra, Jonathan Grabowski, Marissa McMahan, Douglas Rasher, Austin T. Humphries"
-output: html_document
+output:
+  html_document:
+    toc: true
 ---
 
 ```{r setup, include=FALSE}
@@ -12,7 +14,7 @@ library(modelr)
 
 #mixed models and analysis
 library(lme4)
-#library(lmerTest)
+library(lmerTest)
 library(merTools)
 library(car)
 library(nlme)
@@ -59,7 +61,7 @@ II. Kelp forest paradigm is envt -> kelp -> community
  &nbsp; &nbsp;    A. Some direct envt effect, but variable  
 III. New England kelp morphology very different, different ecology  
 &nbsp; &nbsp;     A. Levin et al indications that kelp is not only foundation species here  
-&nbsp; &nbsp;     B. Look at Ecklonia systems
+&nbsp; &nbsp;     B. Look at Ecklonia systems  
 &nbsp; &nbsp;     C. Look, we're New England. Whatever, California.  
 &nbsp; &nbsp;     D. Transition with talking about sugar kelp as dominant  
 IV. Sugar kelp is sensitive to temperature via multiple mechanisms  
@@ -99,8 +101,8 @@ ggmap(keen_map) +
                            shape = TYPE), size=3) +
   xlim(c(-72, -69)) + ylim(c(40.7,43.9)) +
   xlab("") + ylab("") +
-  scale_colour_manual(values=c("red", "black")) +
-  scale_shape_manual(values=c(17,19))
+  scale_colour_manual(values=c("red", "black"), guide = guide_legend("Type")) +
+  scale_shape_manual(values=c(17,19), guide = guide_legend("Type"))
 ```
 
 While some sites had benthic loggers deployed during the period of observation, buoy data enabled a more comprehensive analysis for two reasons. First, this meant that the first year sampled had to be thrown out due to no preceeding winter temperatures recorded. This filtering was particularly problematic as a few sites only have one year of data at present. Second, For analyses to determine a proper causal linkage (see data analysis below), we required temperature data during the duration of sampling for the entire data set - e.g., even for a site sampled in 2016, our models required data from 2013-2017. 
@@ -108,7 +110,7 @@ While some sites had benthic loggers deployed during the period of observation, 
 ##### Statistical analysis (currently interdigitated with results for the whole data set)
 To examine the relationship between temperature and *Saccharina latissima* abundance, we first took a naive look at the relationship between winter minimum temperature at kelp abundance by fitting a generalized linear mixed model with a lognormal error and log link. Percent rocky substrate was included as a covariate, and we included a random effect of site. To evaluate the model, we include a chi square log ratio test of the model as well as tests of the coefficients.
 
-```{r}
+```{r, fig.height=5, fig.width=9}
 
 qplot(WINTER_MIN_SEA_SURFACE_TEMPERATURE, S_LATISSIMA_SQ_M + 1e-5, data = keen_one, color=SITE) +
   stat_smooth(method="glm",  mapping = aes(group=1),
@@ -133,7 +135,7 @@ kable(tidy(keen_sl_naive), "html", digits=3) %>%
 While this model seems to demonstrate a negative relationship between temperature and sugar kelp abundance, given spatial gradients of temperature that correlate with a wide variety of other drivers, it's difficult to say whether this represents a true relationship. To assess the importance of temperature with greater confidence, we used a hierarchical model with group mean centering [@REF TBA]. By calculating a centered mean temperature from 2014-2016, an annual deviation from site-level mean, and including both in the model along with a random effect of site, we're able to 1) derive a relationship driven by between-year variation in temperature without the confusion of spatial correlates and 2) evaluate the relationship due to spatial differences in thermal regime via use of a hierarchical predictor alongside a site-level random effect. In essence, we partition the spatial and temporal component of temperature's effects, and the deviation from site average coefficient addresses the impact of temporal change in temperature at a site.
 
 ```{r}
-keen_sl_mod <-  glmer(S_LATISSIMA_SQ_M +1e-5~ group_temp + temp_group_cent + 
+keen_sl_mod <-  glmer(S_LATISSIMA_SQ_M +1~ group_temp + temp_group_cent + 
                        PERCENT_ROCK + (1|SITE),
                      data = keen_one,
                      family=gaussian(link="log"),
@@ -213,10 +215,8 @@ difference_data <- whole_study %>%
   ungroup()
 
 
-diff_mod <- lme(SL_PERC_DIFF ~ TEMP_DIFF + SITE_PERCENT_ROCK, 
-                random = (~1|SITE), 
-                 data = difference_data,
-                na.action = na.omit)
+diff_mod <- lmer(SL_PERC_DIFF ~ TEMP_DIFF + SITE_PERCENT_ROCK +( 1|SITE), 
+                 data = difference_data)
 
 kable(Anova(diff_mod), digits=3, format="html") %>%
   kable_styling()
@@ -226,7 +226,7 @@ kable(tidy(diff_mod), "html", digits=3) %>%
 
 ```
 
-Here again we see that for one degree change we have a `r round(fixef(diff_mod), 3)`% change in kelp.
+Here again we see that for one degree change we have a `r round(fixef(diff_mod)[2], 3)`% change in kelp.
 
 ```{r}
 
@@ -264,6 +264,7 @@ This lack of a kelp-richness relationship could be real, or it could be that it 
 
 ```{r}
 library(piecewiseSEM)
+source("../scripts/plot_psem.R")
 keen_rich_mod <-  glmer(TOTAL_RICHNESS ~ group_temp + 
                          temp_group_cent + S_LATISSIMA_SQ_M +
                          PERCENT_ROCK + (1|SITE),
@@ -272,17 +273,47 @@ keen_rich_mod <-  glmer(TOTAL_RICHNESS ~ group_temp +
                      nAGQ=0)
 
 keen_sem <- psem(keen_sl_mod, 
-                 keen_rich_mod,
-                data =  keen_one_glm)
+                 keen_rich_mod)
 
 #difference data
 coefs(keen_sem)[,-8] %>% kable("html", 3) %>%
   kable_styling()
 ```
 
+```{r}
+keen_sem_graph_orig <- plot(keen_sem, return=TRUE, show = "unstd", alpha = 0.1) 
+nd <- get_node_df(keen_sem_graph_orig)
+nd[1,] <- nd[6,]
+nd <- nd[-6,]
+nd$id[1] <- 1
 
-```{r, fig.cap="<b>NOTE: I'm futzing with igraph to see if I can automate this</b>",
-fig.width=6, fig.height=7}
+ed <- get_edge_df(keen_sem_graph_orig) %>%
+  mutate(from = ifelse(from==6, 1, from))
+
+toperc <- function(x)
+  paste0(round(100*(exp(as.numeric(x))-1),2), "%")
+
+cushion <- function(x) paste0(" ", x, " ")
+
+keen_sem_graph <- create_graph(nd, ed) %>%
+  set_node_attrs("x", c(2,2,1,3,4))%>%
+  set_node_attrs("y", c(2,3,1,1,3)) %>%
+  set_edge_attrs("label", toperc(get_edge_df(.)$label))%>%
+  set_node_attrs("label", c("S. latissima\nper sq. m",
+                 "Species\nRichness",
+                 "Site Mean Winter\nMinimum Temperature (C)",
+                 "Deviation from\nMean Temperature (C)",
+                 "Percent\nRock")) %>%
+  set_node_attrs("width", c(1.2,1,1.7, 1.7, 1))%>%
+  add_global_graph_attrs("splines", "spline", "graph")%>%
+  add_global_graph_attrs("overlap", "scale", "graph") 
+
+
+render_graph(keen_sem_graph)
+```
+
+```{r fig.width=6, fig.height=7, eval=FALSE}
+
 library(igraph)
 sem_vars <- data.frame(nodes = c("Mean Winter Minimum Temperature", 
                               "Deviation from Mean Temperature",
@@ -333,35 +364,51 @@ plot(sem_paths, vertex.size=350, vertex.size2	=200,
      edge.lty = c(1, 2, 1, 1, 2, 2),
      edge.color = "black",
      rescale=FALSE,
-     xlim=c(0,5),
+     xlim=c(3,9),
      ylim=c(0,10),
      margin = c(0,0,0,0))
 
 ```
+
 The relationship between temperature and richness is direct. There is no apparent mediation by sugar kelp.
 
 Further, if we repeate the differencing analysis, but this time as an SEM with richness, we see again that temperature change, not kelp change, drives total species richness.
 
 ```{r}
-
-rich_diff_mod <- lme(RICH_PERC_DIFF ~ TEMP_DIFF+SL_DIFF,
-                        random = (~1|SITE), 
-                      data = difference_data,
-                      na.action = na.omit)
-
-
+rich_diff_mod <- lmer(RICH_PERC_DIFF ~ TEMP_DIFF + SL_PERC_DIFF + SITE_PERCENT_ROCK + (1|SITE), data = difference_data)
 
 diff_sem <- psem(diff_mod,
-                 rich_diff_mod,
-                 data = difference_data)
+                 rich_diff_mod)
+```
 
+```{r}
 #difference data
-data = difference_data
-coefs(diff_sem)[,-8] %>% kable("html", 3) %>%
+coefs(diff_sem)[,-c(8,9)] %>% kable("html", 3) %>%
   kable_styling()
 ```
 
+```{r diff_graph}
+diff_graph <- plot(diff_sem,  return=TRUE, alpha=0.1)
 
+diff_graph <- diff_graph %>%
+  set_node_attrs("label", c("S. latissima\npercent change",
+                 "Richness\npercent change",
+                 "Change in\nTemperature (C)\n",
+                 "Percent\nRock")) %>%
+  set_node_attrs("x", c(2,2,2,0.5))%>%
+  set_node_attrs("y", c(2,3,1,2)) %>%
+  set_node_attrs("width", c(1,1,1.2, 0.7)) %>%
+  set_edge_attrs("labelfloat", "false") %>%
+  add_global_graph_attrs("splines", "spline", "graph")%>%
+  add_global_graph_attrs("overlap", "scale", "graph") %>%
+  add_global_graph_attrs("rank", "same", "graph") %>%
+  set_edge_attrs("tailport", c(NA, NA, "n", NA, NA))%>%
+  set_edge_attrs("headport", c(NA, NA, "e", NA, NA))
+
+render_graph(diff_graph)
+```
+
+#from 3 to 2 - line 3
 #### Discussion
 
 I. Whoah, New England is different.
