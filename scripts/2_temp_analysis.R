@@ -10,18 +10,39 @@ library(ggplot2)
 theme_set(theme_bw(base_size=17))
 library(merTools)
 library(modelr)
+setwd(here::here())
 
-keen_one <- read_csv("../derived_data/keen_temp_community_merged.csv") %>%
-  filter(SITE != "SW Appledore")
+keen_one <- read_csv("derived_data/keen_temp_community_merged.csv") %>%
+  filter(SITE != "SW Appledore") %>%
+  group_by(SITE, YEAR, TRANSECT) %>%
+  slice(1L) %>%
+  ungroup()
 
 byrnes <- keen_one %>%
   filter(PI == "Byrnes")
 
 #for funsies
 
+qplot(WINTER_MIN_SEA_SURFACE_TEMPERATURE, quadrat_median_wet_weight+1e-5, data = keen_one, color=SITE) +
+  stat_smooth(method="glm",  mapping = aes(group=1),
+              method.args = list(family=gaussian(link="log")) ) +
+  ylab("Wet Weight (g)") +
+  xlab("Winter Min SST (C)")
+
+
+qplot(SUMMER_MAX_SEA_SURFACE_TEMPERATURE, S_LATISSIMA_SQ_M+1e-5, data = keen_one, color=SITE) +
+  stat_smooth(method="glm",  mapping = aes(group=1),
+              method.args = list(family=Gamma(link="log")) )
+
 qplot(WINTER_MIN_SEA_SURFACE_TEMPERATURE, S_LATISSIMA_SQ_M+1e-5, data = keen_one, color=SITE) +
   stat_smooth(method="glm",  mapping = aes(group=1),
               method.args = list(family=Gamma(link="log")) )
+
+qplot(WINTER_MIN_SEA_SURFACE_TEMPERATURE, PERCENT_S_LATISSIMA+1, data = keen_one, color=SITE) +
+  stat_smooth(method="glm",  mapping = aes(group=1),
+              method.args = list(family=Gamma(link="log")) )
+
+
 
 
 qplot(WINTER_MIN_SEA_SURFACE_TEMPERATURE, TOTAL_RICHNESS, data = keen_one, color=SITE) +
@@ -128,15 +149,16 @@ keen_sl_mod_decompose <-  lmer(log(S_LATISSIMA_SQ_M+1) ~ group_temp + year_temp 
                                  PERCENT_ROCK + (1|SITE) + (1|YEAR),
                                data = keen_one)
 
+summary(keen_sl_mod_raw)
 summary(keen_sl_mod)
 summary(keen_sl_mod_decompose)
 
 
 ## visualize raw measurement model
 predict_data_group <- modelr::data_grid(keen_one,
-                                  group_temp = round(seq_range(group_temp, 4),2),
+                                  group_temp = 1:4,
                                   temp_group_cent = seq_range(temp_group_cent, 100),
-                                  PERCENT_ROCK = mean(PERCENT_ROCK),
+                                  PERCENT_ROCK = mean(PERCENT_ROCK, na.rm=T),
                                   SITE = "NE Appledore")
 
 keen_sl_predict <- predictInterval(keen_sl_mod, predict_data_group,
@@ -182,3 +204,21 @@ ggplot(keen_one,
               method.args=list(family=Gamma(link="log")),
               color="black")
 
+
+
+
+ggplot(keen_one, 
+       aes(x = temp_group_cent, y=S_LATISSIMA_SQ_M)) +
+  geom_jitter(mapping = aes(color = SITE)) +
+  scale_color_discrete(guide = guide_legend("Site"))+
+  ylab("Sugar Kelp per Square Meter") +
+  xlab("Temperature Anomaly (C)") +
+  stat_smooth(method="glm", formula = y+1e-9 ~ x,
+              method.args=list(family=Gamma(link="log")),
+              color="black")
+
+###
+ggplot(keen_one,
+       aes(x = YEAR, y = S_LATISSIMA_SQ_M, color = SITE)) +
+  geom_point() +
+  geom_line()

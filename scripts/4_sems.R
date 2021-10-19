@@ -3,41 +3,57 @@
 #' in KEEN ONE data
 #------------------------------------
 library(lme4)
+library(blme)
 library(pbkrtest)
 library(tidyverse)
 library(readr)
 library(ggplot2)
 library(merTools)
-library(piecewiseSEM)
+library(piecewiseSEM) 
+library(glmmTMB)
 
 keen_one <- read_csv("../derived_data/keen_temp_community_merged.csv") %>%
-  filter(SITE != "SW Appledore")
+  filter(SITE != "SW Appledore") #?
 
 #all data
+ggplot(keen_one %>% group_by(SITE, YEAR) %>% summarize(kelp = mean(S_LATISSIMA_SQ_M, na.rm=T), kelp_sd = sd(S_LATISSIMA_SQ_M, na.rm=T)), 
+       aes(x = YEAR, y = kelp, color = SITE, ymin = kelp-kelp_sd, ymax = kelp+kelp_sd)) +
+  geom_point() +
+  geom_linerange() +
+  geom_line()
 
 ##
 
 ## Richness analysis
 keen_one_glm <- keen_one %>%
-  mutate(SL = S_LATISSIMA_SQ_M+1,
-         SLP = PERCENT_S_LATISSIMA + 1)
+  mutate(SL = S_LATISSIMA_SQ_M+1e-5,
+         SLP = (PERCENT_S_LATISSIMA + 1e-5)/100,
+         SLB = quadrat_median_wet_weight/1000+1e-5,
+         R = scale(PERCENT_ROCK)) %>%
+  group_by(SITE) %>%
+  mutate(group_temp = mean(WINTER_MEAN_SEA_SURFACE_TEMPERATURE, na.rm=T),
+         temp_group_cent = WINTER_MEAN_SEA_SURFACE_TEMPERATURE-group_temp)
 
 keen_sl_mod <-  glmer(SL ~ group_temp + temp_group_cent + 
-                       PERCENT_ROCK + (1|SITE),
+                       R + (1|SITE),
                      data = keen_one_glm,
-                     family=Gamma(link="log"))
+                     family=Gamma(link="log"),
+                     control = glmerControl(optimizer = "bobyqa"))
 
+summary(keen_sl_mod)
 
-keen_slp_mod <-  glmer(SLP ~ SL + group_temp + temp_group_cent + 
-                        PERCENT_ROCK + (1|SITE),
+keen_slp_mod_l <-  glmer(SLP ~ SL + group_temp + temp_group_cent + 
+                        R + (1|SITE),
                       data = keen_one_glm,
-                      family=Gamma(link="log"))
+                      family=Gamma(link="log"),
+                      control = glmerControl(optimizer = "bobyqa"))
 
 keen_rich_mod <-  glmer(TOTAL_RICHNESS ~ group_temp + 
                          temp_group_cent + SL + SLP+
-                         PERCENT_ROCK + (1|SITE),
+                         R + (1|SITE),
                        data = keen_one_glm,
-                       family=poisson(link="log"))
+                       family=poisson(link="log"),
+                       control = glmerControl(optimizer = "bobyqa"))
 
 keen_sem <- psem(keen_sl_mod, 
                  keen_slp_mod,
@@ -72,9 +88,9 @@ byrnes_difference <- keen_one %>%
 
 
 
-diff_mod <- lmerTest::lmer(SL_DIFF ~ TEMP_DIFF + SITE_PERCENT_ROCK +(1|SITE), data = byrnes_difference)
+diff_mod <- lmer(SL_DIFF ~ TEMP_DIFF + SITE_PERCENT_ROCK +(1|SITE), data = byrnes_difference)
 
-rich_diff_mod <- lmerTest::lmer(RICH_DIFF ~ TEMP_DIFF+SL_DIFF  +(1|SITE), data = byrnes_difference)
+rich_diff_mod <- lmer(RICH_DIFF ~ TEMP_DIFF+SL_DIFF  +(1|SITE), data = byrnes_difference)
 
 
 diff_sem <- psem(diff_mod, 
@@ -85,10 +101,10 @@ summary(diff_mod)$coefficients
 summary(rich_diff_mod)$coefficients
 
 
-rich_diff_perc_mod <- lmerTest::lmer(RICH_PERC_DIFF ~ TEMP_DIFF+SL_DIFF  +(1|SITE), data = byrnes_difference)
+rich_diff_perc_mod <- lmer(RICH_PERC_DIFF ~ TEMP_DIFF+SL_DIFF  +(1|SITE), data = byrnes_difference)
 
 
-diff_perc_mod <- lmerTest::lmer(SL_PERC_DIFF ~ TEMP_DIFF + SITE_PERCENT_ROCK +(1|SITE), data = byrnes_difference)
+diff_perc_mod <-lmer(SL_PERC_DIFF ~ TEMP_DIFF + SITE_PERCENT_ROCK +(1|SITE), data = byrnes_difference)
 
 
 summary(diff_perc_mod)$coefficients

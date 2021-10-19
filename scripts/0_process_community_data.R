@@ -8,13 +8,13 @@ library(readr)
 library(lubridate)
 
 #for viz checking
-library(ggplot2)
+library(ggplot2)  
 library(ggmap)
 
 # load sites file
 # and get site-level info summarized
-sites <- read_csv("../raw_data/keen_sites.csv") %>% filter(YEAR<2017) %>%
-  select(PI, YEAR, SITE, TRANSECT, START_LATITUDE, START_LONGITUDE, START_DEPTH_M) 
+sites <- read_csv("../raw_data/keen_sites.csv") %>% 
+  dplyr::select(PI, YEAR, SITE, TRANSECT, START_LATITUDE, START_LONGITUDE, START_DEPTH_M) 
 
 
 quads <-read_csv("../raw_data/keen_quads.csv") %>% 
@@ -24,7 +24,7 @@ quads <-read_csv("../raw_data/keen_quads.csv") %>%
   spread(SP_CODE, NUM_SQ_M, fill=0) %>%
   mutate(TOTAL_KELP_SQ_M = SL + LADI + AGCL ) %>%
   rename(S_LATISSIMA_SQ_M = SL) %>%
-  select(PI, YEAR, SITE, TRANSECT, S_LATISSIMA_SQ_M, TOTAL_KELP_SQ_M) 
+  dplyr::select(PI, YEAR, SITE, TRANSECT, S_LATISSIMA_SQ_M, TOTAL_KELP_SQ_M) 
 
 
 #cover for habitat
@@ -34,7 +34,7 @@ cover <-read_csv("../raw_data/keen_cover.csv") %>%
   mutate(PERCENT_ROCK=B+BL+BM+BS+C) %>%
   rename(PERCENT_COBBLE = C,
          PERCENT_SAND = S) %>%
-  select(PI, YEAR, SITE, TRANSECT, PERCENT_ROCK, PERCENT_COBBLE) 
+  dplyr::select(PI, YEAR, SITE, TRANSECT, PERCENT_ROCK, PERCENT_COBBLE) 
 
 
 #cover for habitat
@@ -43,7 +43,7 @@ kelpcover <-read_csv("../raw_data/keen_cover.csv") %>%
   spread(SP_CODE, PERCENT_COVER, fill=0) %>%
   mutate(PERCENT_KELP = SL + LADI + AGCL) %>%
   rename(PERCENT_S_LATISSIMA = SL) %>%
-  select(PI, YEAR, SITE, TRANSECT, PERCENT_S_LATISSIMA, PERCENT_KELP) 
+  dplyr::select(PI, YEAR, SITE, TRANSECT, PERCENT_S_LATISSIMA, PERCENT_KELP) 
 
 
 #swath for crustaceans
@@ -64,7 +64,7 @@ fish <-read_csv("../raw_data/keen_fish.csv") %>%
   spread(SP_CODE, COUNT, fill=0) %>%
   rename(CUNNER_PER_TRANSECT = TAAD,
          POLLACK_PER_TRANSECT = POVI) %>%
-  select(PI, YEAR, SITE, TRANSECT, CUNNER_PER_TRANSECT, POLLACK_PER_TRANSECT) 
+  dplyr::select(PI, YEAR, SITE, TRANSECT, CUNNER_PER_TRANSECT, POLLACK_PER_TRANSECT) 
 
 
 
